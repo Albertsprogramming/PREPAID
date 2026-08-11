@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <style>
   :root{
     --bg:#F4F6F1;
@@ -322,6 +325,30 @@ const METERS = [
   {id:'pump-machine-2', name:'Pump Machine 2', number:'P6330912645'}
 ];
 
+// ===== FIREBASE SETUP =====
+// Paste the config object Firebase gives you when you register a web app.
+// Until this is filled in, the app safely falls back to this device's local storage only.
+const firebaseConfig = {
+  apiKey: "AIzaSyB8VQVWm4T12C9K0h5GfwmZEDg_huP6d1w",
+  authDomain: "prepaid-meter-72733.firebaseapp.com",
+  databaseURL: "https://prepaid-meter-72733-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "prepaid-meter-72733",
+};
+// The one admin account you create in Firebase Authentication > Email/Password.
+const ADMIN_EMAIL = 'admin@meterroom.app';
+
+let firebaseReady = false;
+let fbDb = null;
+let fbAuth = null;
+try{
+  if(firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('PASTE_') && !firebaseConfig.databaseURL.startsWith('PASTE_')){
+    firebase.initializeApp(firebaseConfig);
+    fbDb = firebase.database();
+    fbAuth = firebase.auth();
+    firebaseReady = true;
+  }
+}catch(e){ console.error('Firebase init failed', e); }
+
 const STORAGE_KEY = 'meter-room-state-v2';
 const DEFAULT_LOW = 60;
 const DEFAULT_CRIT = 20;
@@ -343,6 +370,27 @@ let state = {
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function daysBetween(a,b){ return Math.max((new Date(b)-new Date(a))/86400000, 0); }
 
+const FB_PATH = 'meterRoomState';
+let fbListenerAttached = false;
+let suppressNextRender = false;
+
+function attachFirebaseListener(){
+  if(!firebaseReady || fbListenerAttached) return;
+  fbListenerAttached = true;
+  fbDb.ref(FB_PATH).on('value', (snapshot)=>{
+    const data = snapshot.val();
+    if(data){
+      state = Object.assign(state, JSON.parse(data));
+      METERS.forEach(m=>{
+        if(!state.readings[m.id]) state.readings[m.id] = [];
+        if(state.thresholds[m.id] === undefined) state.thresholds[m.id] = {low: DEFAULT_LOW, crit: DEFAULT_CRIT};
+      });
+      try{ localStorage.setItem(STORAGE_KEY, data); }catch(e){}
+      if(typeof render === 'function') render();
+    }
+  }, (err)=>{ console.error('Firebase listener error (check your database rules)', err); });
+}
+
 async function storageGet(key){
   if(typeof window.storage !== 'undefined' && window.storage){
     try{ const res = await window.storage.get(key, false); if(res) return res; }
@@ -361,21 +409,33 @@ async function storageSet(key, value){
 }
 
 async function loadState(){
-  try{
-    const res = await storageGet(STORAGE_KEY);
-    if(res && res.value){
-      const parsed = JSON.parse(res.value);
-      state = Object.assign(state, parsed);
-    }
-  }catch(e){}
+  if(firebaseReady){
+    try{
+      const snap = await fbDb.ref(FB_PATH).get();
+      const data = snap.val();
+      if(data){ state = Object.assign(state, JSON.parse(data)); }
+    }catch(e){ console.error('Firebase load failed, falling back to local data', e); }
+  }else{
+    try{
+      const res = await storageGet(STORAGE_KEY);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        state = Object.assign(state, parsed);
+      }
+    }catch(e){}
+  }
   METERS.forEach(m=>{
     if(!state.readings[m.id]) state.readings[m.id] = [];
     if(state.thresholds[m.id] === undefined) state.thresholds[m.id] = {low: DEFAULT_LOW, crit: DEFAULT_CRIT};
   });
 }
 async function saveState(){
-  try{ await storageSet(STORAGE_KEY, JSON.stringify(state)); }
-  catch(e){ console.error('save failed', e); }
+  const json = JSON.stringify(state);
+  if(firebaseReady){
+    try{ await fbDb.ref(FB_PATH).set(json); }
+    catch(e){ console.error('Firebase save failed — check you are signed in as admin and your database rules', e); alert('Could not save to the shared database. You may need to sign in to admin mode again.'); }
+  }
+  try{ localStorage.setItem(STORAGE_KEY, json); }catch(e){ console.error('local save failed', e); }
 }
 
 function globalRate(){ return state.globalAssumption.amount / state.globalAssumption.days; }
@@ -979,7 +1039,11 @@ try{ isAdminMode = sessionStorage.getItem(ADMIN_SESSION_KEY) === '1'; }catch(e){
 function enterAdminMode(){
   const pw = prompt('Enter admin password:');
   if(pw === null) return;
-  if(pw === ADMIN_PASSWORD){
+  if(firebaseReady){
+    fbAuth.signInWithEmailAndPassword(ADMIN_EMAIL, pw)
+      .catch(()=> alert('Incorrect password.'));
+    // onAuthStateChanged (set up in init) flips isAdminMode and re-renders once sign-in succeeds.
+  }else if(pw === ADMIN_PASSWORD){
     isAdminMode = true;
     try{ sessionStorage.setItem(ADMIN_SESSION_KEY, '1'); }catch(e){}
     render();
@@ -988,9 +1052,13 @@ function enterAdminMode(){
   }
 }
 function exitAdminMode(){
-  isAdminMode = false;
-  try{ sessionStorage.removeItem(ADMIN_SESSION_KEY); }catch(e){}
-  render();
+  if(firebaseReady){
+    fbAuth.signOut();
+  }else{
+    isAdminMode = false;
+    try{ sessionStorage.removeItem(ADMIN_SESSION_KEY); }catch(e){}
+    render();
+  }
 }
 
 let lastRenderedStatus = {};
@@ -1050,9 +1118,18 @@ function tickUpdate(){
   try{ savedTheme = localStorage.getItem('meter-room-theme'); }catch(e){}
   if(!savedTheme) savedTheme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   applyTheme(savedTheme);
+
+  if(firebaseReady){
+    fbAuth.onAuthStateChanged((user)=>{
+      isAdminMode = !!(user && user.email === ADMIN_EMAIL);
+      render();
+    });
+  }
+
   await loadState();
   render();
   checkAndNotify();
+  if(firebaseReady) attachFirebaseListener();
   setInterval(tickUpdate, 1000);
   setInterval(()=>{ render(); checkAndNotify(); }, 15*60*1000);
   document.addEventListener('visibilitychange', ()=>{
