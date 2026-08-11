@@ -1041,14 +1041,16 @@ function enterAdminMode(){
   if(pw === null) return;
   if(firebaseReady){
     fbAuth.signInWithEmailAndPassword(ADMIN_EMAIL, pw)
-      .catch(()=> alert('Incorrect password.'));
-    // onAuthStateChanged (set up in init) flips isAdminMode and re-renders once sign-in succeeds.
+      .catch((err)=>{
+        console.error('Admin sign-in failed:', err.code, err.message);
+        alert('Sign-in failed: ' + err.code + '\n' + err.message);
+      });
   }else if(pw === ADMIN_PASSWORD){
     isAdminMode = true;
     try{ sessionStorage.setItem(ADMIN_SESSION_KEY, '1'); }catch(e){}
     render();
   }else{
-    alert('Incorrect password.');
+    alert('Incorrect password. (Note: Firebase did not connect, so this is using the offline fallback password.)');
   }
 }
 function exitAdminMode(){
