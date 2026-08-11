@@ -661,6 +661,9 @@ function render(){
   html += '  <div><h1 class="display">Meter Room</h1><p class="sub">A calm way to keep every meter topped up — Meter Room estimates today\'s balance for you, even on days you don\'t check.</p></div></div>';
   html += '  <div class="header-actions">';
   html += '  <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode">'+(currentTheme==='dark' ? svgIcon('sun') : svgIcon('moon'))+'</button>';
+  html += '  '+(isAdminMode
+      ? '<button class="btn-ghost" id="exit-admin" title="Return to customer view">Exit admin</button>'
+      : '<button class="btn-ghost" id="enter-admin" title="Enter admin mode">Admin</button>');
   html += '  <div class="notif-box">';
   if(notifSupported && notifPerm !== 'granted') html += '    <button class="btn-primary" id="enable-notif">Turn on alerts</button>';
   if(notifSupported && notifPerm === 'granted') html += '    <button class="btn-ghost" id="test-notif">Send test alert</button>';
@@ -672,6 +675,7 @@ function render(){
   html += '  </div>';
   html += '</header>';
 
+  if(isAdminMode){
   html += '<div class="assumption-bar">';
   html += '  <span>By default, a top-up of</span>';
   html += '  <input type="number" id="global-amount" value="'+state.globalAssumption.amount+'">';
@@ -698,6 +702,7 @@ function render(){
     html += '  </tbody></table>';
     html += '  <div class="bulk-foot"><button class="btn-primary" id="save-bulk">Save all</button><span class="rate-note">This updates the same setting as each card\'s own Settings panel.</span></div>';
     html += '</div>';
+  }
   }
 
   const urgent = sorted.filter(m=> ['crit','empty','low'].includes(stats[m.id].status));
@@ -750,6 +755,7 @@ function render(){
     }
     html += '  </div>';
 
+    if(isAdminMode){
     html += '  <div class="entry-row">';
     html += '    <input type="number" step="0.01" placeholder="Just checked it? Enter balance" id="input-'+m.id+'">';
     html += '    <button class="btn-primary" data-action="log" data-id="'+m.id+'">Log</button>';
@@ -758,12 +764,15 @@ function render(){
     html += '    <input type="number" step="0.01" placeholder="Just bought credit? Enter amount added" id="topup-'+m.id+'">';
     html += '    <button class="btn-ghost" data-action="add-credit" data-id="'+m.id+'">Add</button>';
     html += '  </div>';
+    }
 
     html += '  <div class="card-foot">';
     html += '    <button class="link-btn" data-action="toggle-graph" data-id="'+m.id+'">'+(state.expandedGraph[m.id]?'Hide details':'Details')+'</button>';
     html += '    <button class="link-btn" data-action="toggle-analytics" data-id="'+m.id+'">'+(state.expandedAnalytics[m.id]?'Hide analytics':'Analytics')+'</button>';
+    if(isAdminMode){
     html += '    <button class="link-btn" data-action="toggle-history" data-id="'+m.id+'">'+(state.expandedHistory[m.id]?'Hide history':'History')+'</button>';
     html += '    <button class="link-btn" data-action="toggle-settings" data-id="'+m.id+'">'+(state.expandedSettings[m.id]?'Hide settings':'Settings')+'</button>';
+    }
     html += '  </div>';
 
     if(state.expandedGraph[m.id]){
@@ -774,7 +783,7 @@ function render(){
       html += '  <div class="panel">'+buildAnalyticsPanel(m.id)+'</div>';
     }
 
-    if(state.expandedSettings[m.id]){
+    if(isAdminMode && state.expandedSettings[m.id]){
       const ov = state.meterAssumption[m.id] || {};
       html += '  <div class="panel"><div class="settings-grid">';
       html += '    <label>Low below<input type="number" id="low-'+m.id+'" value="'+s.th.low+'"></label>';
@@ -785,7 +794,7 @@ function render(){
       html += '  </div></div>';
     }
 
-    if(state.expandedHistory[m.id]){
+    if(isAdminMode && state.expandedHistory[m.id]){
       html += '  <div class="panel">';
       if(s.readings.length===0) html += '    <p class="empty-note">No readings yet.</p>';
       else [...s.readings].reverse().slice(0,10).forEach(r=>{
@@ -876,6 +885,10 @@ function attachHandlers(){
     state.readings[id] = state.readings[id].filter(r=> r.rid!==rid);
     await saveState(); render();
   }));
+  const enterAdminBtn = document.getElementById('enter-admin');
+  if(enterAdminBtn) enterAdminBtn.addEventListener('click', enterAdminMode);
+  const exitAdminBtn = document.getElementById('exit-admin');
+  if(exitAdminBtn) exitAdminBtn.addEventListener('click', exitAdminMode);
   const themeToggle = document.getElementById('theme-toggle');
   if(themeToggle) themeToggle.addEventListener('click', ()=>{
     applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
@@ -955,6 +968,29 @@ function checkAndNotify(){
     }
   });
   if(changed) saveState();
+}
+
+// Change this before sharing the link with customers — anyone who knows it can enter admin mode.
+const ADMIN_PASSWORD = 'admin123';
+const ADMIN_SESSION_KEY = 'meter-room-admin';
+let isAdminMode = false;
+try{ isAdminMode = sessionStorage.getItem(ADMIN_SESSION_KEY) === '1'; }catch(e){}
+
+function enterAdminMode(){
+  const pw = prompt('Enter admin password:');
+  if(pw === null) return;
+  if(pw === ADMIN_PASSWORD){
+    isAdminMode = true;
+    try{ sessionStorage.setItem(ADMIN_SESSION_KEY, '1'); }catch(e){}
+    render();
+  }else{
+    alert('Incorrect password.');
+  }
+}
+function exitAdminMode(){
+  isAdminMode = false;
+  try{ sessionStorage.removeItem(ADMIN_SESSION_KEY); }catch(e){}
+  render();
 }
 
 let lastRenderedStatus = {};
