@@ -273,6 +273,60 @@
   .empty-note{font-size:12px;color:var(--text-muted);margin-bottom:8px;}
 
   footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--text-muted);line-height:1.6;}
+
+  /* ===== Modals (credit reminder + purchase records) ===== */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(18,24,26,0.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:1000;}
+  .modal-backdrop.open{display:flex;}
+  .modal{
+    background:var(--surface);color:var(--text-primary);border:1px solid var(--line);border-radius:18px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.28);width:100%;max-width:440px;padding:26px 24px 22px;
+    animation:fadeInUp 0.25s ease both;
+  }
+  .modal.wide{max-width:760px;max-height:88vh;display:flex;flex-direction:column;padding:22px 22px 18px;}
+  .modal-icon{
+    width:52px;height:52px;border-radius:14px;background:var(--amber-soft);color:var(--amber-text);
+    display:flex;align-items:center;justify-content:center;margin-bottom:14px;
+  }
+  .modal-icon svg{width:26px;height:26px;}
+  .modal h2{font-family:'Fraunces',serif;font-size:21px;font-weight:600;margin:0 0 8px;letter-spacing:-0.01em;}
+  .modal p{font-size:14px;line-height:1.6;color:var(--text-secondary);margin:0 0 10px;}
+  .modal p b{color:var(--text-primary);font-weight:600;}
+  .modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+  .modal-actions .btn-primary{flex:1;min-width:140px;}
+  .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;}
+  .modal-head h2{margin:0;}
+  .modal-head .sub-line{font-size:12.5px;color:var(--text-muted);margin:3px 0 0;}
+  .modal-close{
+    background:var(--surface-soft);border:1px solid var(--line-strong);color:var(--text-secondary);
+    width:34px;height:34px;border-radius:10px;font-size:18px;line-height:1;padding:0;flex-shrink:0;
+  }
+  .modal-close:hover{color:var(--coral-text);border-color:var(--coral);}
+  .rec-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
+  .rec-toolbar select{
+    background:var(--surface-soft);border:1px solid var(--line-strong);color:var(--text-primary);
+    border-radius:10px;padding:8px 10px;font-family:'Work Sans',sans-serif;font-size:13px;min-width:180px;
+  }
+  .rec-toolbar select:focus{outline:none;border-color:var(--teal);}
+  .rec-body{overflow:auto;flex:1;min-height:0;}
+  .rec-table{width:100%;border-collapse:collapse;}
+  .rec-table th{
+    text-align:left;font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;
+    letter-spacing:0.03em;padding:0 8px 8px;border-bottom:1px solid var(--line-strong);
+    position:sticky;top:0;background:var(--surface);
+  }
+  .rec-table td{padding:10px 8px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle;}
+  .rec-table td.num,.rec-table th.num{text-align:right;white-space:nowrap;}
+  .rec-table .rec-meter{font-weight:500;}
+  .rec-table .rec-num{font-size:11px;color:var(--text-muted);}
+  .rec-table .rec-amt{font-weight:600;color:var(--teal-text);}
+  .rec-table .rec-time{white-space:nowrap;color:var(--text-secondary);}
+  @media (max-width:520px){
+    .modal.wide{padding:18px 14px 14px;}
+    .rec-table th{padding:0 5px 8px;font-size:10px;}
+    .rec-table td{padding:9px 5px;font-size:12px;}
+    .rec-table .rec-num{font-size:10px;}
+  }
+  .rec-foot{font-size:11.5px;color:var(--text-muted);margin:10px 0 0;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -364,7 +418,8 @@ let state = {
   expandedHistory: {},
   expandedSettings: {},
   expandedGraph: {},
-  expandedAnalytics: {}
+  expandedAnalytics: {},
+  purchases: []
 };
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -385,6 +440,7 @@ function attachFirebaseListener(){
         if(!state.readings[m.id]) state.readings[m.id] = [];
         if(state.thresholds[m.id] === undefined) state.thresholds[m.id] = {low: DEFAULT_LOW, crit: DEFAULT_CRIT};
       });
+      if(!Array.isArray(state.purchases)) state.purchases = [];
       try{ localStorage.setItem(STORAGE_KEY, data); }catch(e){}
       if(typeof render === 'function') render();
     }
@@ -428,6 +484,7 @@ async function loadState(){
     if(!state.readings[m.id]) state.readings[m.id] = [];
     if(state.thresholds[m.id] === undefined) state.thresholds[m.id] = {low: DEFAULT_LOW, crit: DEFAULT_CRIT};
   });
+  if(!Array.isArray(state.purchases)) state.purchases = [];
 }
 async function saveState(){
   const json = JSON.stringify(state);
@@ -720,6 +777,7 @@ function render(){
   html += '  <div class="brand"><div class="brand-icon"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="#fff"/></svg></div>';
   html += '  <div><h1 class="display">Meter Room</h1><p class="sub">A calm way to keep every meter topped up — Meter Room estimates today\'s balance for you, even on days you don\'t check.</p></div></div>';
   html += '  <div class="header-actions">';
+  html += '  <button class="btn-ghost" id="open-records" title="See every credit purchase">Purchase records</button>';
   html += '  <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode">'+(currentTheme==='dark' ? svgIcon('sun') : svgIcon('moon'))+'</button>';
   html += '  '+(isAdminMode
       ? '<button class="btn-ghost" id="exit-admin" title="Return to customer view">Exit admin</button>'
@@ -872,6 +930,7 @@ function render(){
   app.innerHTML = html;
   attachHandlers();
   mountPendingCharts();
+  if(typeof recordsOpen !== 'undefined' && recordsOpen) renderRecords();
 }
 
 async function sendNotification(title, options){
@@ -945,6 +1004,8 @@ function attachHandlers(){
     state.readings[id] = state.readings[id].filter(r=> r.rid!==rid);
     await saveState(); render();
   }));
+  const openRecordsBtn = document.getElementById('open-records');
+  if(openRecordsBtn) openRecordsBtn.addEventListener('click', openRecords);
   const enterAdminBtn = document.getElementById('enter-admin');
   if(enterAdminBtn) enterAdminBtn.addEventListener('click', enterAdminMode);
   const exitAdminBtn = document.getElementById('exit-admin');
@@ -1003,6 +1064,15 @@ async function addCredit(meterId){
     value: current + amount,
     ts: now,
     rid: now+'-'+Math.random().toString(36).slice(2,8)
+  });
+  if(!Array.isArray(state.purchases)) state.purchases = [];
+  state.purchases.push({
+    pid: now+'-'+Math.random().toString(36).slice(2,8),
+    meterId: meterId,
+    amount: Math.round(amount*100)/100,
+    balanceAfter: Math.round((current + amount)*100)/100,
+    date: todayStr(),
+    ts: now
   });
   input.value = '';
   await saveState(); render(); checkAndNotify();
@@ -1112,6 +1182,128 @@ function tickUpdate(){
   if(statusChanged){ render(); checkAndNotify(); }
 }
 
+
+// ===== Credit reminder pop-up + purchase records =====
+let recordsOpen = false;
+let recordsFilter = 'all';
+let hiddenAt = null;
+
+function ensureModals(){
+  if(document.getElementById('reminder-modal')) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<div class="modal-backdrop" id="reminder-modal" role="dialog" aria-modal="true" aria-labelledby="reminder-title">' +
+      '<div class="modal">' +
+        '<div class="modal-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M6 9a6 6 0 1 1 12 0c0 5 2 6.5 2 6.5H4S6 14 6 9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 19a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>' +
+        '<h2 id="reminder-title">Never forget to enter your credit</h2>' +
+        '<p>Every time you <b>purchase credit</b> for a meter, enter it here straight away using the <b>Add</b> box on that meter\'s card.</p>' +
+        '<p>This keeps the information on the meter website managed and gives you a <b>record of every meter purchase</b>.</p>' +
+        '<div class="modal-actions">' +
+          '<button class="btn-primary" id="reminder-ok">I understand</button>' +
+          '<button class="btn-ghost" id="reminder-records">View purchase records</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="modal-backdrop" id="records-modal" role="dialog" aria-modal="true" aria-labelledby="records-title">' +
+      '<div class="modal wide">' +
+        '<div class="modal-head">' +
+          '<div><h2 id="records-title">Credit purchase records</h2><p class="sub-line">Every credit purchase entered with the Add box, newest first.</p></div>' +
+          '<button class="modal-close" id="records-close" aria-label="Close">&times;</button>' +
+        '</div>' +
+        '<div class="rec-body" id="records-body"></div>' +
+      '</div>' +
+    '</div>';
+  while(wrap.firstChild) document.body.appendChild(wrap.firstChild);
+
+  document.getElementById('reminder-ok').addEventListener('click', closeCreditReminder);
+  document.getElementById('reminder-records').addEventListener('click', ()=>{ closeCreditReminder(); openRecords(); });
+  document.getElementById('records-close').addEventListener('click', closeRecords);
+  document.getElementById('records-modal').addEventListener('click', (e)=>{ if(e.target.id==='records-modal') closeRecords(); });
+  document.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Escape') return;
+    if(recordsOpen) closeRecords();
+    else closeCreditReminder();
+  });
+}
+
+function showCreditReminder(){
+  ensureModals();
+  if(recordsOpen) return;
+  document.getElementById('reminder-modal').classList.add('open');
+}
+function closeCreditReminder(){
+  const m = document.getElementById('reminder-modal');
+  if(m) m.classList.remove('open');
+}
+
+function openRecords(){
+  ensureModals();
+  recordsOpen = true;
+  document.getElementById('records-modal').classList.add('open');
+  renderRecords();
+}
+function closeRecords(){
+  recordsOpen = false;
+  const m = document.getElementById('records-modal');
+  if(m) m.classList.remove('open');
+}
+
+function meterById(id){ return METERS.find(m=> m.id===id); }
+
+function renderRecords(){
+  const body = document.getElementById('records-body');
+  if(!body) return;
+  const all = (Array.isArray(state.purchases) ? state.purchases : []).slice().sort((a,b)=> b.ts - a.ts);
+  const list = recordsFilter==='all' ? all : all.filter(p=> p.meterId===recordsFilter);
+  const total = list.reduce((a,p)=> a + p.amount, 0);
+  const now = new Date();
+  const monthKey = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const monthTotal = list.filter(p=> p.date.slice(0,7)===monthKey).reduce((a,p)=> a + p.amount, 0);
+
+  let html = '<div class="analytics-stats">';
+  html += statChip('speedo','Purchases', String(list.length));
+  html += statChip('flame','Total bought', 'GH¢ '+fmt(total));
+  html += statChip('sun','This month', 'GH¢ '+fmt(monthTotal));
+  html += '</div>';
+
+  html += '<div class="rec-toolbar"><label for="records-filter" style="font-size:12.5px;color:var(--text-secondary);">Show</label>';
+  html += '<select id="records-filter"><option value="all">All meters</option>';
+  METERS.forEach(m=>{
+    html += '<option value="'+m.id+'"'+(recordsFilter===m.id?' selected':'')+'>'+m.name+'</option>';
+  });
+  html += '</select></div>';
+
+  if(list.length === 0){
+    html += '<p class="empty-note" style="padding:18px 0;">No purchases recorded yet. When you buy credit, enter it with the <b>Add</b> box on that meter\'s card and it will appear here.</p>';
+  }else{
+    html += '<table class="rec-table"><thead><tr><th>Date &amp; time</th><th>Meter</th><th class="num">Bought</th><th class="num">Balance after</th>'+(isAdminMode?'<th></th>':'')+'</tr></thead><tbody>';
+    list.forEach(p=>{
+      const m = meterById(p.meterId);
+      const when = new Date(p.ts);
+      const dateText = when.toLocaleDateString('en-GB',{day:'numeric', month:'short', year:'numeric'});
+      const timeText = when.toLocaleTimeString('en-GB',{hour:'2-digit', minute:'2-digit'});
+      html += '<tr>';
+      html += '<td class="rec-time">'+dateText+'<div class="rec-num">'+timeText+'</div></td>';
+      html += '<td><div class="rec-meter">'+(m?m.name:'Unknown meter')+'</div><div class="rec-num">'+(m?m.number:'')+'</div></td>';
+      html += '<td class="num rec-amt">GH¢ '+fmt(p.amount)+'</td>';
+      html += '<td class="num">'+(p.balanceAfter!=null ? 'GH¢ '+fmt(p.balanceAfter) : '—')+'</td>';
+      if(isAdminMode) html += '<td class="num"><button class="del link-btn" data-pid="'+p.pid+'">remove</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<p class="rec-foot">Records start from when this feature was added. "Balance after" is the meter\'s estimated balance at the moment the credit was entered.</p>';
+  }
+  body.innerHTML = html;
+
+  const sel = document.getElementById('records-filter');
+  if(sel) sel.addEventListener('change', ()=>{ recordsFilter = sel.value; renderRecords(); });
+  body.querySelectorAll('button[data-pid]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if(!confirm('Remove this purchase record? This only deletes the record — it does not change the meter\'s balance.')) return;
+    state.purchases = state.purchases.filter(p=> p.pid !== btn.dataset.pid);
+    await saveState(); render();
+  }));
+}
+
 (async function init(){
   if('serviceWorker' in navigator){
     try{ await navigator.serviceWorker.register('./sw.js'); }catch(e){ console.error('SW registration failed', e); }
@@ -1129,13 +1321,21 @@ function tickUpdate(){
   }
 
   await loadState();
+  ensureModals();
   render();
   checkAndNotify();
+  showCreditReminder();
   if(firebaseReady) attachFirebaseListener();
   setInterval(tickUpdate, 1000);
   setInterval(()=>{ render(); checkAndNotify(); }, 15*60*1000);
   document.addEventListener('visibilitychange', ()=>{
-    if(document.visibilityState === 'visible'){ render(); checkAndNotify(); }
+    if(document.visibilityState === 'hidden'){ hiddenAt = Date.now(); }
+    if(document.visibilityState === 'visible'){
+      render(); checkAndNotify();
+      // Installed apps are often resumed, not reloaded: remind again after being away a few minutes.
+      if(hiddenAt && Date.now() - hiddenAt > 3*60*1000) showCreditReminder();
+      hiddenAt = null;
+    }
   });
 })();
 </script>
