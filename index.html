@@ -388,8 +388,6 @@ const firebaseConfig = {
   databaseURL: "https://prepaid-meter-72733-default-rtdb.europe-west1.firebasedatabase.app",
   projectId: "prepaid-meter-72733",
 };
-// The one admin account you create in Firebase Authentication > Email/Password.
-const ADMIN_EMAIL = 'admin@meterroo.app';
 
 let firebaseReady = false;
 let fbDb = null;
@@ -490,7 +488,7 @@ async function saveState(){
   const json = JSON.stringify(state);
   if(firebaseReady){
     try{ await fbDb.ref(FB_PATH).set(json); }
-    catch(e){ console.error('Firebase save failed — check you are signed in as admin and your database rules', e); alert('Could not save to the shared database. You may need to sign in to admin mode again.'); }
+    catch(e){ console.error('Firebase save failed — check your database rules allow writes', e); alert('Could not save to the shared database. Check that your Firebase database rules allow writing.'); }
   }
   try{ localStorage.setItem(STORAGE_KEY, json); }catch(e){ console.error('local save failed', e); }
 }
@@ -779,9 +777,6 @@ function render(){
   html += '  <div class="header-actions">';
   html += '  <button class="btn-ghost" id="open-records" title="See every credit purchase">Purchase records</button>';
   html += '  <button class="theme-toggle" id="theme-toggle" title="Toggle dark mode">'+(currentTheme==='dark' ? svgIcon('sun') : svgIcon('moon'))+'</button>';
-  html += '  '+(isAdminMode
-      ? '<button class="btn-ghost" id="exit-admin" title="Return to customer view">Exit admin</button>'
-      : '<button class="btn-ghost" id="enter-admin" title="Enter admin mode">Admin</button>');
   html += '  <div class="notif-box">';
   if(notifSupported && notifPerm !== 'granted') html += '    <button class="btn-primary" id="enable-notif">Turn on alerts</button>';
   if(notifSupported && notifPerm === 'granted') html += '    <button class="btn-ghost" id="test-notif">Send test alert</button>';
@@ -1006,10 +1001,6 @@ function attachHandlers(){
   }));
   const openRecordsBtn = document.getElementById('open-records');
   if(openRecordsBtn) openRecordsBtn.addEventListener('click', openRecords);
-  const enterAdminBtn = document.getElementById('enter-admin');
-  if(enterAdminBtn) enterAdminBtn.addEventListener('click', enterAdminMode);
-  const exitAdminBtn = document.getElementById('exit-admin');
-  if(exitAdminBtn) exitAdminBtn.addEventListener('click', exitAdminMode);
   const themeToggle = document.getElementById('theme-toggle');
   if(themeToggle) themeToggle.addEventListener('click', ()=>{
     applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
@@ -1100,38 +1091,8 @@ function checkAndNotify(){
   if(changed) saveState();
 }
 
-// Change this before sharing the link with customers — anyone who knows it can enter admin mode.
-const ADMIN_PASSWORD = 'admin123';
-const ADMIN_SESSION_KEY = 'meter-room-admin';
-let isAdminMode = false;
-try{ isAdminMode = sessionStorage.getItem(ADMIN_SESSION_KEY) === '1'; }catch(e){}
-
-function enterAdminMode(){
-  const pw = prompt('Enter admin password:');
-  if(pw === null) return;
-  if(firebaseReady){
-    fbAuth.signInWithEmailAndPassword(ADMIN_EMAIL, pw)
-      .catch((err)=>{
-        console.error('Admin sign-in failed:', err.code, err.message);
-        alert('Sign-in failed: ' + err.code + '\n' + err.message);
-      });
-  }else if(pw === ADMIN_PASSWORD){
-    isAdminMode = true;
-    try{ sessionStorage.setItem(ADMIN_SESSION_KEY, '1'); }catch(e){}
-    render();
-  }else{
-    alert('Incorrect password. (Note: Firebase did not connect, so this is using the offline fallback password.)');
-  }
-}
-function exitAdminMode(){
-  if(firebaseReady){
-    fbAuth.signOut();
-  }else{
-    isAdminMode = false;
-    try{ sessionStorage.removeItem(ADMIN_SESSION_KEY); }catch(e){}
-    render();
-  }
-}
+// Admin tools are always available (no password, no admin button).
+const isAdminMode = true;
 
 let lastRenderedStatus = {};
 let bulkSettingsOpen = false;
@@ -1312,13 +1273,6 @@ function renderRecords(){
   try{ savedTheme = localStorage.getItem('meter-room-theme'); }catch(e){}
   if(!savedTheme) savedTheme = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
   applyTheme(savedTheme);
-
-  if(firebaseReady){
-    fbAuth.onAuthStateChanged((user)=>{
-      isAdminMode = !!(user && user.email === ADMIN_EMAIL);
-      render();
-    });
-  }
 
   await loadState();
   ensureModals();
